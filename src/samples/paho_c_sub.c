@@ -14,6 +14,7 @@
  *    Ian Craggs - initial contribution
  *    Ian Craggs - fix for bug 413429 - connectionLost not called
  *    Guilherme Maciel Ferreira - add keep alive option
+ *    Dishant Langayan - ssl authentication options
  *******************************************************************************/
 
 /*

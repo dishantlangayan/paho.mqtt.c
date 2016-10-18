@@ -14,6 +14,7 @@
  *    Ian Craggs - initial contribution
  *    Ian Craggs - change delimiter option from char to string
  *    Guilherme Maciel Ferreira - add keep alive option
+ *    Dishant Langayan - ssl authentication options
  *******************************************************************************/
 
 /*

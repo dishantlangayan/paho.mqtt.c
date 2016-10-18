@@ -13,6 +13,7 @@
  * Contributors:
  *    Ian Craggs - initial contribution
  *    Guilherme Maciel Ferreira - add keep alive option
+ *    Dishant Langayan - ssl authentication options
  *******************************************************************************/
  
  /*
@@ -322,6 +323,7 @@ int main(int argc, char** argv)
 
 	return EXIT_SUCCESS;
 }
+
 
 void getopts(int argc, char** argv)
 {

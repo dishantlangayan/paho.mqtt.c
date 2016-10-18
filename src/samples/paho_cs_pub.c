@@ -12,6 +12,7 @@
  *
  * Contributors:
  *    Ian Craggs - initial contribution
+ *    Dishant Langayan - ssl authentication options
  *******************************************************************************/
  
  /*
