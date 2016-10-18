@@ -34,6 +34,12 @@
 	
 	--userid none
 	--password none
+
+	--client-key none
+	--client-key-pass none
+	--client-privatekey none
+	--server-key none
+	--server-cert-auth off
  
 */
 
@@ -69,9 +75,14 @@ struct
 	char* port;
 	int verbose;
 	int keepalive;
+	char* client_key_file;
+	char* client_key_pass;
+	char* client_private_key;
+	char* server_key_file;
+	int server_cert_auth;
 } opts =
 {
-	"stdin-publisher-async", "\n", 100, 0, 0, NULL, NULL, "localhost", "1883", 0, 10
+	"stdin-publisher-async", "\n", 100, 0, 0, NULL, NULL, "localhost", "1883", 0, 10, NULL, NULL, NULL, NULL, 0
 };
 
 
@@ -88,7 +99,13 @@ void usage(void)
 	printf("  --maxdatalen <bytes> (default is %d)\n", opts.maxdatalen);
 	printf("  --username none\n");
 	printf("  --password none\n");
-	printf("  --keepalive <seconds> (default is 10 seconds)\n");
+	printf("  --keepalive <seconds> (default is %d seconds)\n", opts.keepalive);
+	printf("SSL authentication options:\n");
+	printf("  --client-key <key_file> - Use <key_file> as the client certificate for SSL authentication\n");
+	printf("  --client-key-pass <password> - Use <password> to access the private key in the client certificate\n");
+	printf("  --client-privatekey <file> - Client private key file if not in certificate file\n");
+	printf("  --server-key <key_file> - Use <key_file> as the trusted certificate for server\n");
+	printf("  --server-cert-auth <on or off> - Validate server certificates (default is off)\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -153,9 +170,20 @@ void myconnect(MQTTAsync* client)
 	conn_opts.onSuccess = onConnect;
 	conn_opts.onFailure = onConnectFailure;
 	conn_opts.context = client;
-	ssl_opts.enableServerCertAuth = 0;
-	conn_opts.ssl = &ssl_opts;
 	conn_opts.automaticReconnect = 1;
+
+	// SSL authentication options
+	conn_opts.ssl = &ssl_opts;
+	if (opts.server_key_file != NULL)
+		conn_opts.ssl->trustStore = opts.server_key_file; /*file of certificates trusted by client*/
+	if (opts.client_key_file != NULL)
+		conn_opts.ssl->keyStore = opts.client_key_file; /*file of certificate for client to present to server*/
+	if (opts.client_key_pass != NULL)
+		conn_opts.ssl->privateKeyPassword = opts.client_key_pass;
+	if (opts.client_private_key != NULL)
+		conn_opts.ssl->privateKey = opts.client_private_key; /*private key file in not in certificate key file*/
+	conn_opts.ssl->enableServerCertAuth = opts.server_cert_auth; /*validate server certificates*/
+
 	connected = 0;
 	if ((rc = MQTTAsync_connect(*client, &conn_opts)) != MQTTASYNC_SUCCESS)
 	{
@@ -243,6 +271,7 @@ int main(int argc, char** argv)
 
 	buffer = malloc(opts.maxdatalen);
 	
+	printf("Enter some text to send as the payload\n");
 	while (!toStop)
 	{
 		int data_len = 0;
@@ -373,6 +402,48 @@ void getopts(int argc, char** argv)
 		{
 			if (++count < argc)
 				opts.keepalive = atoi(argv[count]);
+			else
+				usage();
+		}
+		else if (strcmp(argv[count], "--client-key") == 0)
+		{
+			if (++count < argc)
+				opts.client_key_file = argv[count];
+			else
+				usage();
+		}
+		else if (strcmp(argv[count], "--client-key-pass") == 0)
+		{
+			if (++count < argc)
+				opts.client_key_pass = argv[count];
+			else
+				usage();
+		}
+		else if (strcmp(argv[count], "--client-privatekey") == 0)
+		{
+			if (++count < argc)
+				opts.client_private_key = argv[count];
+			else
+				usage();
+		}
+		else if (strcmp(argv[count], "--server-key") == 0)
+		{
+			if (++count < argc)
+				opts.server_key_file = argv[count];
+			else
+				usage();
+		}
+		else if (strcmp(argv[count], "--server-cert-auth") == 0)
+		{
+			if (++count < argc)
+			{
+				if (strcmp(argv[count], "on") == 0)
+					opts.server_cert_auth = 1;
+				else if (strcmp(argv[count], "off") == 0)
+					opts.server_cert_auth = 0;
+				else
+					usage();
+			}
 			else
 				usage();
 		}

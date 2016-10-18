@@ -36,6 +36,12 @@
 	
 	--userid none
 	--password none
+
+	--client-key none
+	--client-key-pass none
+	--client-privatekey none
+	--server-key none
+	--server-cert-auth off
  
 */
 
@@ -82,9 +88,14 @@ struct
 	char* port;
 	int showtopics;
 	int keepalive;
+	char* client_key_file;
+	char* client_key_pass;
+	char* client_private_key;
+	char* server_key_file;
+	int server_cert_auth;
 } opts =
 {
-	"stdout-subscriber-async", 1, '\n', 2, NULL, NULL, "localhost", "1883", 0, 10
+	"stdout-subscriber-async", 1, '\n', 2, NULL, NULL, "localhost", "1883", 0, 10, NULL, NULL, NULL, NULL, 0
 };
 
 
@@ -100,7 +111,13 @@ void usage(void)
 	printf("  --username none\n");
 	printf("  --password none\n");
 	printf("  --showtopics <on or off> (default is on if the topic has a wildcard, else off)\n");
-	printf("  --keepalive <seconds> (default is 10 seconds)\n");
+	printf("  --keepalive <seconds> (default is %d seconds)\n", opts.keepalive);
+	printf("SSL authentication options:\n");
+	printf("  --client-key <key_file> - Use <key_file> as the client certificate for SSL authentication\n");
+	printf("  --client-key-pass <password> - Use <password> to access the private key in the client certificate\n");
+	printf("  --client-privatekey <file> - Client private key file if not in certificate file\n");
+	printf("  --server-key <key_file> - Use <key_file> as the trusted certificate for server\n");
+	printf("  --server-cert-auth <on or off> - Validate server certificates (default is off)\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -196,6 +213,48 @@ void getopts(int argc, char** argv)
 			else
 				usage();
 		}
+		else if (strcmp(argv[count], "--client-key") == 0)
+		{
+			if (++count < argc)
+				opts.client_key_file = argv[count];
+			else
+				usage();
+		}
+		else if (strcmp(argv[count], "--client-key-pass") == 0)
+		{
+			if (++count < argc)
+				opts.client_key_pass = argv[count];
+			else
+				usage();
+		}
+		else if (strcmp(argv[count], "--client-privatekey") == 0)
+		{
+			if (++count < argc)
+				opts.client_private_key = argv[count];
+			else
+				usage();
+		}
+		else if (strcmp(argv[count], "--server-key") == 0)
+		{
+			if (++count < argc)
+				opts.server_key_file = argv[count];
+			else
+				usage();
+		}
+		else if (strcmp(argv[count], "--server-cert-auth") == 0)
+		{
+			if (++count < argc)
+			{
+				if (strcmp(argv[count], "on") == 0)
+					opts.server_cert_auth = 1;
+				else if (strcmp(argv[count], "off") == 0)
+					opts.server_cert_auth = 0;
+				else
+					usage();
+			}
+			else
+				usage();
+		}
 		count++;
 	}
 	
@@ -205,11 +264,11 @@ void getopts(int argc, char** argv)
 int messageArrived(void *context, char *topicName, int topicLen, MQTTAsync_message *message)
 {
 	if (opts.showtopics)
-		printf("%s\t", topicName);
+		printf("Topic: %s\t", topicName);
 	if (opts.nodelimiter)
-		printf("%.*s", message->payloadlen, (char*)message->payload);
+		printf("Message: %.*s", message->payloadlen, (char*)message->payload);
 	else
-		printf("%.*s%c", message->payloadlen, (char*)message->payload, opts.delimiter);
+		printf("Message: %.*s%c", message->payloadlen, (char*)message->payload, opts.delimiter);
 	fflush(stdout);
 	MQTTAsync_freeMessage(&message);
 	MQTTAsync_free(topicName);
@@ -231,23 +290,23 @@ void onSubscribe(void* context, MQTTAsync_successData* response)
 
 void onSubscribeFailure(void* context, MQTTAsync_failureData* response)
 {
-	printf("Subscribe failed, rc %d\n", response->code);
+	printf("Subscribe failed, rc %d\n", response ? response->code : -1);
 	finished = 1;
 }
 
 
 void onConnectFailure(void* context, MQTTAsync_failureData* response)
 {
-	printf("Connect failed, rc %d\n", response->code);
+	printf("Connect failed, rc %d\n", response ? response->code : -1);
 	finished = 1;
 }
 
 
 void onConnect(void* context, MQTTAsync_successData* response)
 {
+	printf("Connected\n");
 	MQTTAsync client = (MQTTAsync)context;
 	MQTTAsync_responseOptions ropts = MQTTAsync_responseOptions_initializer;
-	MQTTAsync_message pubmsg = MQTTAsync_message_initializer;
 	int rc;
 
 	if (opts.showtopics)
@@ -285,6 +344,7 @@ int main(int argc, char** argv)
 {
 	MQTTAsync client;
 	MQTTAsync_disconnectOptions disc_opts = MQTTAsync_disconnectOptions_initializer;
+	MQTTAsync_SSLOptions ssl_opts = MQTTAsync_SSLOptions_initializer;
 	int rc = 0;
 	char url[100];
 	
@@ -315,6 +375,19 @@ int main(int argc, char** argv)
 	conn_opts.onSuccess = onConnect;
 	conn_opts.onFailure = onConnectFailure;
 	conn_opts.context = client;
+
+	// SSL authentication options
+	conn_opts.ssl = &ssl_opts;
+	if (opts.server_key_file != NULL)
+		conn_opts.ssl->trustStore = opts.server_key_file; /*file of certificates trusted by client*/
+	if (opts.client_key_file != NULL)
+		conn_opts.ssl->keyStore = opts.client_key_file; /*file of certificate for client to present to server*/
+	if (opts.client_key_pass != NULL)
+		conn_opts.ssl->privateKeyPassword = opts.client_key_pass;
+	if (opts.client_private_key != NULL)
+		conn_opts.ssl->privateKey = opts.client_private_key; /*private key file in not in certificate key file*/
+	conn_opts.ssl->enableServerCertAuth = opts.server_cert_auth; /*validate server certificates*/
+
 	if ((rc = MQTTAsync_connect(client, &conn_opts)) != MQTTASYNC_SUCCESS)
 	{
 		printf("Failed to start connect, return code %d\n", rc);

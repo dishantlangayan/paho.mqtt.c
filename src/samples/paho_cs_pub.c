@@ -32,6 +32,12 @@
 	
 	--userid none
 	--password none
+
+	--client-key none
+	--client-key-pass none
+	--client-privatekey none
+	--server-key none
+	--server-cert-auth off
  
 */
 
@@ -68,6 +74,12 @@ void usage(void)
 	printf("  --maxdatalen 100\n");
 	printf("  --username none\n");
 	printf("  --password none\n");
+	printf("SSL authentication options:\n");
+	printf("  --client-key <key_file> - Use <key_file> as the client certificate for SSL authentication\n");
+	printf("  --client-key-pass <password> - Use <password> to access the private key in the client certificate\n");
+	printf("  --client-privatekey <file> - Client private key file if not in certificate file\n");
+	printf("  --server-key <key_file> - Use <key_file> as the trusted certificate for server\n");
+	printf("  --server-cert-auth <on or off> - Validate server certificates (default is off)\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -75,9 +87,10 @@ void usage(void)
 void myconnect(MQTTClient* client, MQTTClient_connectOptions* opts)
 {
 	printf("Connecting\n");
-	if (MQTTClient_connect(*client, opts) != 0)
+	int rc = 0;
+	if ((rc = MQTTClient_connect(*client, opts)) != 0)
 	{
-		printf("Failed to connect\n");
+		printf("Failed to connect, return code %d\n", rc);
 		exit(EXIT_FAILURE);
 	}
 	printf("Connected\n");
@@ -102,10 +115,15 @@ struct
 	char* password;
 	char* host;
 	char* port;
-  int verbose;
+  	int verbose;
+	char* client_key_file;
+	char* client_key_pass;
+	char* client_private_key;
+	char* server_key_file;
+	int server_cert_auth;
 } opts =
 {
-	"publisher", "\n", 100, 0, 0, NULL, NULL, "localhost", "1883", 0
+	"publisher", "\n", 100, 0, 0, NULL, NULL, "localhost", "1883", 0, NULL, NULL, NULL, NULL, 0
 };
 
 void getopts(int argc, char** argv);
@@ -138,25 +156,40 @@ int main(int argc, char** argv)
 	topic = argv[1];
 	printf("Using topic %s\n", topic);
 
-	rc = MQTTClient_create(&client, url, opts.clientid, MQTTCLIENT_PERSISTENCE_NONE, NULL);
+	if ((rc = MQTTClient_create(&client, url, opts.clientid, MQTTCLIENT_PERSISTENCE_NONE, NULL)) != 0)
+	{
+		printf("Failed to create client, return code %d\n", rc);
+		exit(EXIT_FAILURE);
+	}
 
 	signal(SIGINT, cfinish);
 	signal(SIGTERM, cfinish);
 
-	rc = MQTTClient_setCallbacks(client, NULL, NULL, messageArrived, NULL);
+	//rc = MQTTClient_setCallbacks(client, NULL, NULL, messageArrived, NULL);
 
 	conn_opts.keepAliveInterval = 10;
 	conn_opts.reliable = 0;
 	conn_opts.cleansession = 1;
 	conn_opts.username = opts.username;
 	conn_opts.password = opts.password;
-	ssl_opts.enableServerCertAuth = 0;
+
+	// SSL authentication options
 	conn_opts.ssl = &ssl_opts;
+	if (opts.server_key_file != NULL)
+		conn_opts.ssl->trustStore = opts.server_key_file; /*file of certificates trusted by client*/
+	if (opts.client_key_file != NULL)
+		conn_opts.ssl->keyStore = opts.client_key_file; /*file of certificate for client to present to server*/
+	if (opts.client_key_pass != NULL)
+		conn_opts.ssl->privateKeyPassword = opts.client_key_pass;
+	if (opts.client_private_key != NULL)
+		conn_opts.ssl->privateKey = opts.client_private_key; /*private key file in not in certificate key file*/
+	conn_opts.ssl->enableServerCertAuth = opts.server_cert_auth; /*validate server certificates*/
 	
 	myconnect(&client, &conn_opts);
 
 	buffer = malloc(opts.maxdatalen);
 	
+	printf("Enter some text to send as the payload\n");
 	while (!toStop)
 	{
 		int data_len = 0;
@@ -269,6 +302,48 @@ void getopts(int argc, char** argv)
 		{
 			if (++count < argc)
 				opts.delimiter = argv[count];
+			else
+				usage();
+		}
+		else if (strcmp(argv[count], "--client-key") == 0)
+		{
+			if (++count < argc)
+				opts.client_key_file = argv[count];
+			else
+				usage();
+		}
+		else if (strcmp(argv[count], "--client-key-pass") == 0)
+		{
+			if (++count < argc)
+				opts.client_key_pass = argv[count];
+			else
+				usage();
+		}
+		else if (strcmp(argv[count], "--client-privatekey") == 0)
+		{
+			if (++count < argc)
+				opts.client_private_key = argv[count];
+			else
+				usage();
+		}
+		else if (strcmp(argv[count], "--server-key") == 0)
+		{
+			if (++count < argc)
+				opts.server_key_file = argv[count];
+			else
+				usage();
+		}
+		else if (strcmp(argv[count], "--server-cert-auth") == 0)
+		{
+			if (++count < argc)
+			{
+				if (strcmp(argv[count], "on") == 0)
+					opts.server_cert_auth = 1;
+				else if (strcmp(argv[count], "off") == 0)
+					opts.server_cert_auth = 0;
+				else
+					usage();
+			}
 			else
 				usage();
 		}
